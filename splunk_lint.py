@@ -9,6 +9,7 @@ import logging
 import logging.handlers
 import subprocess
 from ConfigParser import ConfigParser
+import re
 
 import os
 
@@ -69,12 +70,21 @@ if __name__ == '__main__':
     try:
         command = []
         configfile = os.path.basename(__file__).replace('.py', '.cfg')
-        print configfile
         splunkconfig = getconfig(configfile, 'splunk')
+        pattern = splunkconfig['pattern']
         command.append(splunkconfig['splunk_path'])
     except Exception as e:
         logger.info(e)
         exit(1)
     command.append('restart')
     stdout, stderr = process(command)
-    print stdout
+    errormatch = re.compile(pattern)
+    output = stdout.splitlines()
+
+    for line in output:
+        print line
+        print errormatch.search(line)
+        if errormatch.search(line):
+            print re.sub(r'\s(/[^/]+){4}/', ' ', line)
+
+
