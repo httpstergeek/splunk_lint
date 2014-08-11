@@ -1,6 +1,6 @@
 __author__ = 'x243'
 
-# Currently require a splunk_cycle.cfg file to run
+# Currently require a splunk_lint.cfg file to run
 #
 #
 
@@ -8,9 +8,12 @@ __author__ = 'x243'
 import logging
 import logging.handlers
 import subprocess
+import argparse
+from shutil import rmtree, move, copytree, ignore_patterns
 from ConfigParser import ConfigParser
+import distutils.core
 import re
-
+from time import sleep
 import os
 
 
@@ -66,25 +69,84 @@ def getconfig(objfile, stanza):
     return settings
 
 if __name__ == '__main__':
-    # Attempts to load config file
+    # retrieve command line args
+    parser = argparse.ArgumentParser(description='Copies Repo to Splunk App directory.  Use splunk_lint.cfg configure splunk and repo locations')
+    parser.add_argument('--repo', help='name of repo', required=True)
+    args = parser.parse_args()
+
+    # get pid
+    pid = str(os.getpid())
+    execute_path = os.path.dirname(os.path.realpath(__file__))
+    pidfile = os.path.join(execute_path, 'pid')
+
+    # Attempts to load config file and generate pid file
     try:
+        cnt = 0
+        while cnt < 5 :
+            if os.path.isfile(pidfile):
+                logger.info('Process already running')
+                cnt += 1
+                sleep(60)
+            else:
+                file(pidfile, 'w').write(pid)
+                break
+        if os.path.isfile(pidfile):
+            logger.info('Build verification failed.  Try again.')
+            exit(2)
         command = []
-        configfile = os.path.basename(__file__).replace('.py', '.cfg')
-        splunkconfig = getconfig(configfile, 'splunk')
-        pattern = splunkconfig['pattern']
-        command.append(splunkconfig['splunk_path'])
+        config_file = os.path.basename(__file__).replace('.py', '.cfg')
+        splunk_config = getconfig(config_file, 'splunk')
+        splunk_path = splunk_config['splunk_path']
+        repo_path = os.path.join(splunk_config['repo_path'], args.repo)
+        pattern = splunk_config['pattern']
+        command.append(os.path.join(splunk_path, 'bin', 'splunk'))
     except Exception as e:
         logger.info(e)
+        os.unlink(pidfile)
         exit(1)
+
+    # validate repo exists and copies to Splunk App Dir
+    if os.path.isdir(repo_path):
+        splunk_apps = os.path.join(splunk_path, 'etc', 'apps')
+        copy_location = os.path.join(splunk_apps, args.repo)
+        msg = 'moving %s to %s' % (repo_path, copy_location)
+        logger.info(msg)
+        copytree(repo_path, copy_location, symlinks=True, ignore=ignore_patterns('.git', '.gitignore'))
+    else:
+        msg = '%s not found' % repo_path
+        logger.info('')
+        os.unlink(pidfile)
+        exit(1)
+
+    # restarting splunk
     command.append('restart')
+    logger.info('Running restart command')
     stdout, stderr = process(command)
+    logger.info('restart complete')
     errormatch = re.compile(pattern)
     output = stdout.splitlines()
 
+    # Validating configurations
+    err_flag = False
+    logger.info('validating build')
+    if stderr:
+        logger.info(stderr.rstrip())
     for line in output:
-        print line
-        print errormatch.search(line)
         if errormatch.search(line):
-            print re.sub(r'\s(/[^/]+){4}/', ' ', line)
+            logger.info(re.sub(r'\s(/[^/]+){4}/', ' ', line.strip()))
+            err_flag = True
+    if stderr or err_flag:
+        msg = '%s build failed' % args.repo
+        exit_code = 2
+    else:
+        exit_code = 0
+        msg = '%s build successful' % args.repo
+    logger.info(msg)
+
+    msg = 'removing build: %s' % copy_location
+    logger.info(msg)
+    rmtree(copy_location)
+    os.unlink(pidfile)
+    exit(exit_code)
 
 
