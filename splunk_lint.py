@@ -92,21 +92,24 @@ if __name__ == '__main__':
     pid = str(os.getpid())
     execute_path = os.path.dirname(os.path.realpath(__file__))
     pidfile = os.path.join(execute_path, 'pid')
-
+    logger.info('verify_status=%s build_name=%s' % ('start', args.repo))
     # Attempts to load config file and generate pid file
     try:
         cnt = 0
-        while cnt < 5 :
-            if os.path.isfile(pidfile):
-                logger.info('Process already running')
+        while 5 >= cnt :
+            file_exists = os.path.isfile(pidfile)
+            if file_exists:
+                logger.info('verify_status=%s build_name=%s' % ('wait', args.repo))
                 cnt += 1
                 sleep(60)
+            elif file_exists and 5 >= cnt:
+                logger.info('verify_status=%s build_status=%s build_name=%s' % ('end','fail', args.repo))
+                exit(2)
             else:
+                logger.info('write_pid=%s' % pidfile)
                 file(pidfile, 'w').write(pid)
                 break
-        if os.path.isfile(pidfile):
-            logger.info('Build verification failed.  Try again.')
-            exit(2)
+
         command = []
         config_file = os.path.basename(__file__).replace('.py', '.cfg')
         splunk_config = getconfig(config_file, 'splunk')
@@ -123,9 +126,13 @@ if __name__ == '__main__':
     if os.path.isdir(repo_path):
         splunk_apps = os.path.join(splunk_path, 'etc', 'apps')
         copy_location = os.path.join(splunk_apps, args.repo)
-        msg = 'moving %s to %s' % (repo_path, copy_location)
+        msg = 'copying src=%s dest=%s' % (repo_path, copy_location)
         logger.info(msg)
-        copytree(repo_path, copy_location, symlinks=True, ignore=ignore_patterns('.git', '.gitignore'))
+        if os.path.isdir(copy_location):
+            logger.info('cleaning previous build=%s' % args.repo)
+            rmtree(copy_location)
+        else:
+            copytree(repo_path, copy_location, symlinks=True, ignore=ignore_patterns('.git', '.gitignore'))
     else:
         msg = '%s not found' % repo_path
         logger.info('')
@@ -134,32 +141,34 @@ if __name__ == '__main__':
 
     # restarting splunk
     command.append('restart')
-    logger.info('Running restart command')
+    command.append('--no-prompt')
+    logger.info('verify_status=%s build_name=%s' % ('running', args.repo))
     stdout, stderr = process(command)
-    logger.info('restart complete')
     errormatch = re.compile(pattern)
     output = stdout.splitlines()
 
     # Validating configurations
     err_flag = False
-    logger.info('validating build')
+    logger.info('verify_status=%s build_name=%s' % ('validate', args.repo))
     if stderr:
-        logger.info(stderr.rstrip())
+        stderr = stderr.rstrip(' \t\n\r').replace('\n', ' ')
+        logger.info(re.sub(r'\'(/[^/]+){4}/', ' ', stderr))
     for line in output:
         if errormatch.search(line):
-            logger.info(re.sub(r'\s(/[^/]+){4}/', ' ', line.strip()))
+            logger.info(re.sub(r'\s(/[^/]+){4}/', ' ', line.strip(' \t\n\r')))
             err_flag = True
     if stderr or err_flag:
-        msg = '%s build failed' % args.repo
+        msg = 'verify_status=%s build_status=%s build_name=%s' % ('complete', 'fail', args.repo)
         exit_code = 2
     else:
         exit_code = 0
-        msg = '%s build successful' % args.repo
+        msg = 'verify_status=%s build_status=%s build_name=%s' % ('complete', 'success', args.repo)
     logger.info(msg)
 
-    msg = 'removing build: %s' % copy_location
+    msg = 'removing build_name=%s dest=%s' % (args.repo, copy_location)
     logger.info(msg)
     rmtree(copy_location)
+    logger.info('remove_pid=%s' % pidfile)
     os.unlink(pidfile)
     exit(exit_code)
 
