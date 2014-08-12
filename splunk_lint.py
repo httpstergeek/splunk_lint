@@ -23,9 +23,8 @@ import logging
 import logging.handlers
 import subprocess
 import argparse
-from shutil import rmtree, move, copytree, ignore_patterns
+from shutil import rmtree, copytree, ignore_patterns
 from ConfigParser import ConfigParser
-import distutils.core
 import re
 from time import sleep
 import os
@@ -149,7 +148,7 @@ if __name__ == '__main__':
 
     # Validating configurations
     err_flag = False
-    logger.info('verify_status=%s build_name=%s' % ('validate', args.repo))
+    logger.info('verify_status=%s build_name=%s' % ('validating', args.repo))
     if stderr:
         stderr = stderr.rstrip(' \t\n\r').replace('\n', ' ')
         logger.info(re.sub(r'\'(/[^/]+){4}/', ' ', stderr))
@@ -158,11 +157,11 @@ if __name__ == '__main__':
             logger.info(re.sub(r'\s(/[^/]+){4}/', ' ', line.strip(' \t\n\r')))
             err_flag = True
     if stderr or err_flag:
-        msg = 'verify_status=%s build_status=%s build_name=%s' % ('complete', 'fail', args.repo)
+        msg = 'verify_status=%s build_status=%s build_name=%s' % ('completed', 'fail', args.repo)
         exit_code = 2
     else:
         exit_code = 0
-        msg = 'verify_status=%s build_status=%s build_name=%s' % ('complete', 'success', args.repo)
+        msg = 'verify_status=%s build_status=%s build_name=%s' % ('completed', 'success', args.repo)
     logger.info(msg)
 
     msg = 'removing build_name=%s dest=%s' % (args.repo, copy_location)
